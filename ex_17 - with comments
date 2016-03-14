@@ -1,0 +1,283 @@
+#include <stdio.h>
+#include <assert.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <string.h>
+
+// below we define two constants, MAX_DATA and MAX_ROWS using the CPP (C Pre Processer). This is different to const.
+#define MAX_DATA 512
+#define MAX_ROWS 100
+
+struct Address
+{
+	int id;
+	int set;
+	char name[MAX_DATA];
+	char email[MAX_DATA];
+};
+
+/** In the address struct we define the size of the arrays for name and email using pre-defined MAX_DATA.
+
+The Database struct is made up of 100 rows(MAX_ROWS), each one of which is the Address struct.  As such we shouldn't be able to have more than 100 addresses in the Database. 
+*/
+
+struct Database {
+	struct Address rows[MAX_ROWS];
+};
+
+struct Connection 
+{
+	FILE *file;
+	struct Database *db;
+};
+
+// In the above we are creating the ptr (db) for the struct Database
+
+// In the die function we use the const function, which creates a read only / variable that can not be altered in runtime. This is different to an actual constant. The constant in this case in the ptr(?) message.
+
+void die(const char *message)
+{
+	if(errno) {
+		perror(message);
+	} else {
+		printf("Error: %s\n", message);
+	}
+	
+	exit(1);	
+}
+
+/** Creation of the ptr addr which is a ptr for the struct Address.
+
+We then use the structer ptr referencing to print out the id, name and email address of each address inside the struct.
+*/
+void Address_print(struct Address *addr)
+{
+	printf("%d %s %s\n", addr->id, addr->name, addr->email);
+}
+
+/** Similar to the above, we create the ptr conn which is for the struct Connection.
+
+This then uses struct ptr referencing to access the struct Database, reads it / the size of it using fread(?). If this is not equal to 1 (there is no databse) it displays an error message. NOT AS YET 100% ON THE FULL FUCNTIONALITY OF THIS BLOCK.
+*/
+
+void Database_load (struct Connection *conn)
+{
+	int rc = fread(conn->db, sizeof(struct Database), 1, conn->file);
+	if(rc != 1) 
+		die ("Failed to load database.");
+}
+
+// NOT YET SURE ON THE REFERENCING GOING ON BELOW. Creation of a new function, yet seems to also fit the syntax for a new ptr for the sruct connection?
+struct Connection *Database_open(const char *filename, char mode)
+{
+
+/** Creation of ptr for struct Connection inside function (assuming this must be done as previously it was created outside the function(?). Use of malloc to make sure that the struct can be allocated enough memory for it's size.
+
+The same is being done below for the struct Database using struct ptr referencing. If there is not enough memory it will return an error.
+*/
+	struct Connection *conn = malloc(sizeof(struct Connection));
+	if (!conn) 
+		die ("Memory error");
+	
+	conn->db = malloc(sizeof(struct Database));
+	if(!conn->db)
+		die("Memory error");
+
+/** Unsure what the mode == 'c' is in reference to. 
+
+The "w" is writing, over write on existing. The "r+" is reading and writing, new data is written at the beginning overwriting existing data.
+*/
+		
+	if (mode == 'c') {
+		conn->file = fopen(filename, "w");
+	} else {
+		conn->file = fopen(filename, "r+");
+		
+		if (conn->file) {
+			Database_load(conn);
+		}
+	}
+
+// This returns an error message if we hae failed to load a file.
+	
+	if (!conn->file) die ("Failed to open the file");
+	
+	return conn;
+}
+
+// The below deallocates the memory assigned to the database struct. I THINK that it runs through a checklist / sequence of sorts. First checking that there is a Connection struct, which there will be. Then using the struct ptr referencing system it closes any files, frees / deallocates the memory assigned to the db struct, before then freeing / deallocating the memory allocated to the conn struct.  
+
+void Database_close(struct Connection *conn)
+
+{
+	if(conn) {
+		if (conn->file) fclose(conn->file);
+		if (conn->db) free (conn->db);
+		free (conn);
+	}
+}
+
+/** The rewind function takes us to the start of the file.
+
+The fwrite function then writes the contents of the db struct, using the ptr ref system, to the file.
+
+The first part of the () is what we'll be writing, in this case the db struct. 
+Next is the size of the element to be written, which we get using the sizeof() function. 
+The 1 is the number of elements to be written (I have seen examples of this function working without that, but it returns an error when I try to remove it in this instance).
+Lastly is the destination, which in this case is the file, using the struct ptr ref system.
+
+If the fwrite function fails and nothing is written / returned then the rc will not equal 1 and the die function will be called. 
+
+Lastly we call the fflush function which flushes the buffer(not sure where / how we set up a buffer in this?). Which again returns an error code if we can not flush (also unsure how this is working).
+
+*/
+
+void Database_write (struct Connection *conn)
+{
+	rewind(conn -> file);
+	
+	int rc = fwrite(conn->db, sizeof(struct Database), 1, conn->file);
+	if (rc != 1) die ("Failed to write database.");
+	
+	rc = fflush(conn->file);
+	if (rc == -1) die ("Cannot flush database.");
+}
+
+void Database_create(struct Connection *conn)
+{
+	int i = 0;
+	
+	for(i = 0; i < MAX_ROWS; i++) {
+		// Make a prototype to initialize it using the member operator to create an intial entry.
+		struct Address addr = {.id = i, .set = 0};
+		// then just assign it
+		conn -> db -> rows[i] = addr;
+	}
+}
+
+/** Set up the ptr conn for the struct Connection and the variables for use inside the function Database_set. 
+
+The first bloke of code in the function is checking to see if memory has already been allocated / an address for the id in rows already exists. It does this using the '&' symbol in conjuction with the ptr referencing, which checks the memory address of what is being referenced. Then using the ptr referencing with the if statement, it checks to see if the set member in the addr struct has a value. If it does then it returns the die / error message.
+
+If the set in addr equals 1 it will then go onto copy the name and email address using strncpy. If this fails it returns a die error message. Not sure how this ties in with the above block which returns an error message if the set member is set. This may be a backup for if someone decides to delete the enntry as the error message suggests(?).
+
+*/
+
+void Database_set (struct Connection *conn, int id, const char *name, const char *email)
+{
+	struct Address *addr = &conn->db->rows[id];
+	if (addr->set) 
+		die ("Already set, delete it first");
+	
+	addr->set = 1;
+	// Warning: strncpy bug - requires fixing
+	char *res = strncpy(addr->name, name, MAX_DATA);
+	// demo the strncpy bug
+	if (!res) die ("Name copy failed");
+	
+	res = strncpy(addr->email, email, MAX_DATA);
+	if (!res) die ("Email copy failed");
+}
+
+/** Creation of the conn ptr (again?) and the variables used in the function.
+
+First block returns the address of the id in the same way as the above function. Then if the addr is does exist it will check the set member, again the same as above. If it returns a value it will print the struct addr entry for that set, if there is no value it returns the die error message.
+
+*/
+
+void Database_get(struct Connection *conn, int id)
+{
+	struct Address *addr = &conn->db->rows[id];
+	
+	if(addr->set) {
+		Address_print(addr);
+	} else {
+		die("ID is not set");
+	}
+}
+
+/** Creation of the delete function, setup the ptr conn and the id variable. 
+
+The function uses the member operator to set the id and the set members of the address struct. The use of addr does not ref the ptr but is just a created for vaariable name for the setting of the members using the member operator. 
+
+Not yet sure how this function works. It seems to set the values for addr, then reset then using the id from rows. If the id from rows is being used to return the entry required from the struct(which I think it is), why does this come after the setting of the vales for addr and how does this delete the entry?
+
+*/
+
+void Database_delete(struct Connection *conn, int id)
+{
+	struct Address addr = {.id = id, .set = 0};
+	conn-> db->rows[id] = addr;
+}
+
+/** Creation of the list function, setup of the conn ptr.
+
+Unsure of the purpose of the first block, seems to be assgning the value of the ptr db to the ptr db, using nested ptr referencing(?).
+
+Second block uses the ptr assigns the address of i in rows to the ptr cur. Then it is using ptr referencing, if cur references set it will print cur (not sure how it prints the actual entry instead of the memory address itself, or how it works?)
+
+*/
+
+void Database_list(struct Connection *conn)
+{
+	int i = 0;
+	struct Database *db = conn -> db;
+	
+	for (i = 0; i < MAX_ROWS; i++) {
+		struct Address *cur = &db -> rows[i];
+		
+		if (cur->set) {
+			Address_print(cur);
+		}
+	}
+}
+
+int main(int argc, char *argv[])
+{
+	if(argc < 3) die ("USAGE: ex17 <dbfile> <action> [action params]");
+	
+	char *filename = argv[1];
+	char action = argv[2] [0];
+	struct Connection *conn = Database_open(filename, action);
+	int id = 0;
+	
+	if (argc > 3) id = atoi(argv[3]);
+	if(id >= MAX_ROWS) die ("There's not that many records.");
+	
+	switch(action) {
+		case 'c':
+			Database_create(conn);
+			Database_write(conn);
+			break;
+			
+		case 'g':
+			if (argc != 4) die ("Need an id to get");
+			
+			Database_get(conn, id);
+			break;
+			
+		case 's':
+			if(argc != 6) die ("Need id, name, email to set");
+			
+			Database_set(conn, id, argv[4], argv[5]);
+			Database_write(conn);
+			break;
+			
+		case 'd':
+			if (argc != 4) die ("Need id to delete");
+			
+			Database_delete(conn, id);
+			Database_write(conn);
+			break;
+		
+		case 'l':
+			Database_list(conn);
+			break;
+		default:
+			die ("Invalid action, only: c = create, g = get, s = set, d = delete, l = list");
+	}
+	
+	Database_close(conn);
+	
+	return 0;	
+}	
